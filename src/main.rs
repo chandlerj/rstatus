@@ -7,8 +7,8 @@ use std::time::Duration;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
-
-
+use std::process::Command;
+use std::str::from_utf8;
 
 fn main() {
 
@@ -20,12 +20,11 @@ fn main() {
 
    loop {
 
-       let bat_state = get_battery_percentage();
        let cpu_usage = get_cpu_usage(&mut sys);
        let memory = get_memory(&mut sys);
        let time = get_time(&mut "America/Denver");
-       
-       let output = match CString::new(format!("bat: {:2}%  cpu: {:2}%  mem: {:2}%  {}", bat_state, cpu_usage, memory, time)) {
+       let sys_volume = get_system_volume();
+       let output = match CString::new(format!("vol: {:2}%  cpu: {:2}%  mem: {:2}%  {}", sys_volume, cpu_usage, memory, time)) {
 
             Ok(out) => out,
             Err(e) => {
@@ -100,6 +99,15 @@ fn get_battery_percentage() -> i32 {
             return 0
         }
     };
-
     percentage
+}
+
+fn get_system_volume() -> f64 {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("amixer sget Master | grep 'Right:' | awk -F'[][]' '{ print $2 }' | sed 's/%//'")
+        .output()
+        .unwrap();
+    let stdout = from_utf8(&output.stdout).unwrap().trim();
+    stdout.parse::<f64>().unwrap()
 }
