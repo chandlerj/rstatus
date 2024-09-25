@@ -23,8 +23,9 @@ fn main() {
        let cpu_usage = get_cpu_usage(&mut sys);
        let memory = get_memory(&mut sys);
        let time = get_time(&mut "America/Denver");
+       let battery = get_battery_percentage();
        let sys_volume = get_system_volume();
-       let output = match CString::new(format!("vol: {:2}%  cpu: {:2}%  mem: {:2}%  {}", sys_volume, cpu_usage, memory, time)) {
+       let output = match CString::new(format!(" vol: {:2}%  bat: {:2}%  cpu: {:2}%  mem: {:2}%  {}", sys_volume, battery, cpu_usage, memory, time)) {
 
             Ok(out) => out,
             Err(e) => {
@@ -87,19 +88,31 @@ fn get_cpu_usage(sys: &mut sysinfo::System) -> u32{
     (totalusage / sys.cpus().len() as f32) as u32
 }
 
-fn get_battery_percentage() -> i32 {
+fn get_battery_percentage() -> String {
+    let mut output = String::from("");
+
+    match fs::read_to_string("/sys/class/power_supply/BAT0/status"){
+        Ok(status) => {
+            if status == "Charging\n" {
+                output.push_str("(crg) ")
+            }
+        }
+        Err(_) => {
+            eprintln!("Could not find charging status")
+        }
+    };
+
     let percentage = match fs::read_to_string("/sys/class/power_supply/BAT0/capacity"){
         Ok(mut percent) => {
             percent.pop();
-            let as_int: i32 = percent.parse().unwrap();
-            as_int
+            output.push_str(&percent);
         }
         Err(_) => {
             eprintln!("Could not find battery");
-            return 0
+            return String::from("err")
         }
     };
-    percentage
+    output
 }
 
 fn get_system_volume() -> f64 {
