@@ -102,7 +102,7 @@ fn get_battery_percentage() -> String {
         }
     };
 
-    let percentage = match fs::read_to_string("/sys/class/power_supply/BAT0/capacity"){
+    match fs::read_to_string("/sys/class/power_supply/BAT0/capacity"){
         Ok(mut percent) => {
             percent.pop();
             output.push_str(&percent);
