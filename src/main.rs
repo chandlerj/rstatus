@@ -1,4 +1,4 @@
-use sysinfo::{System, MemoryRefreshKind};
+use sysinfo::{System, MemoryRefreshKind, Components};
 use chrono::{Utc, DateTime};
 use chrono_tz::Tz;
 use std::ffi::CString;
@@ -16,16 +16,17 @@ fn main() {
    let (conn, screen_num) = RustConnection::connect(None).unwrap();
    let screen = &conn.setup().roots[screen_num];
    let wm_name_atom = conn.intern_atom(false, b"WM_NAME").unwrap().reply().unwrap().atom;
+   let mut components = Components::new_with_refreshed_list();
    let utf8_string_atom = conn.intern_atom(false, b"UTF8_STRING").unwrap().reply().unwrap().atom;
-
    loop {
-
+       let sys_temp = get_system_temp(&mut components);
        let cpu_usage = get_cpu_usage(&mut sys);
        let memory = get_memory(&mut sys);
        let time = get_time(&mut "America/Denver");
        let battery = get_battery_percentage();
        let sys_volume = get_system_volume();
-       let output = match CString::new(format!(" vol: {:2}%  bat: {:2}%  cpu: {:2}%  mem: {:2}%  {}", sys_volume, battery, cpu_usage, memory, time)) {
+       
+       let output = match CString::new(format!(" vol: {:2}%  cpu: {:2}%  temp: {:5}C  mem: {:2}%  {}", sys_volume, cpu_usage, sys_temp, memory, time)) {
 
             Ok(out) => out,
             Err(e) => {
@@ -104,8 +105,9 @@ fn get_battery_percentage() -> String {
 
     match fs::read_to_string("/sys/class/power_supply/BAT0/capacity"){
         Ok(mut percent) => {
-            percent.pop();
-            output.push_str(&percent);
+            percent.pop(); // extra newline at the end of the file
+            let as_int: i32 = percent.parse().unwrap();
+            as_int
         }
         Err(_) => {
             eprintln!("Could not find battery");
@@ -115,12 +117,33 @@ fn get_battery_percentage() -> String {
     output
 }
 
-fn get_system_volume() -> f64 {
-    let output = Command::new("sh")
+fn get_system_volume() -> u16 {
+    match Command::new("sh")
         .arg("-c")
         .arg("amixer sget Master | grep 'Right:' | awk -F'[][]' '{ print $2 }' | sed 's/%//'")
-        .output()
-        .unwrap();
-    let stdout = from_utf8(&output.stdout).unwrap().trim();
-    stdout.parse::<f64>().unwrap()
+        .output(){
+            Ok(output) => {
+                let stdout = from_utf8(&output.stdout).unwrap().trim();
+                stdout.parse::<u16>().unwrap()
+            },
+
+
+            Err(_) => {
+                eprintln!("could not find audio device. have you installed amixer?");
+                0
+            }
+
+        }
+
+}
+
+fn get_system_temp(components: &mut Components) -> f32 {
+    components.refresh();
+    let mut max_temp = 0.0;
+    for component in components {
+        if component.temperature() > max_temp {
+            max_temp = component.temperature();
+        }
+    }
+    max_temp
 }
