@@ -26,8 +26,7 @@ fn main() {
        let battery = get_battery_percentage();
        let sys_volume = get_system_volume();
        
-       let output = match CString::new(format!(" vol: {:2}%  cpu: {:2}%  temp: {:5}C  mem: {:2}%  {}", sys_volume, cpu_usage, sys_temp, memory, time)) {
-
+       let output = match CString::new(format!(" vol: {:2}%  temp: {:2}C  bat: {:2}%  cpu: {:2}%  mem: {:2}%  {}", sys_volume, sys_temp, battery, cpu_usage, memory, time)) {
             Ok(out) => out,
             Err(e) => {
 
@@ -105,9 +104,8 @@ fn get_battery_percentage() -> String {
 
     match fs::read_to_string("/sys/class/power_supply/BAT0/capacity"){
         Ok(mut percent) => {
-            percent.pop(); // extra newline at the end of the file
-            let as_int: i32 = percent.parse().unwrap();
-            as_int
+            percent.pop();
+            output.push_str(&percent);
         }
         Err(_) => {
             eprintln!("Could not find battery");
@@ -137,12 +135,13 @@ fn get_system_volume() -> u16 {
 
 }
 
-fn get_system_temp(components: &mut Components) -> f32 {
+fn get_system_temp(components: &mut Components) -> u16 {
     components.refresh();
-    let mut max_temp = 0.0;
+    let mut max_temp = 0;
     for component in components {
-        if component.temperature() > max_temp {
-            max_temp = component.temperature();
+        let temp = component.temperature() as u16;
+        if  temp > max_temp {
+            max_temp = temp;
         }
     }
     max_temp
