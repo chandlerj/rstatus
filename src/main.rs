@@ -26,10 +26,9 @@ fn main() {
        let battery = get_battery_percentage();
        let sys_volume = get_system_volume();
        
-       let output = match CString::new(format!(" vol: {:2}%  temp: {:2}C  bat: {:2}%  cpu: {:2}%  mem: {:2}%  {}", sys_volume, sys_temp, battery, cpu_usage, memory, time)) {
+       let output = match CString::new(format!(" vol {:2}  temp {:2}C  bat {:2}  cpu {:2}%  mem {:2}%  {}", sys_volume, sys_temp, battery, cpu_usage, memory, time)) {
             Ok(out) => out,
             Err(e) => {
-
                eprintln!("{}", e.to_string());
                continue;
             }
@@ -54,47 +53,109 @@ fn main() {
 
 }
 
-fn get_time(timezone: &str) -> String {
-   let tz = timezone.parse(); 
-   match tz{
 
+fn get_time(timezone: &str) -> String {
+   match timezone.parse(){
        Ok(tz) => {
             let utc: DateTime<Utc> = Utc::now();
             let local: DateTime<Tz> = utc.with_timezone(&tz);
-            local.format("%H:%M:%S %m/%d").to_string()
+            return local.format("%H:%M %m/%d").to_string()
        }
        Err(e) => {
-            e.to_string()
+            return e.to_string()
        }
    }
 }
 
 
-fn get_memory(sys: &mut sysinfo::System) -> u64 {
+fn get_memory(sys: &mut sysinfo::System) -> String {
     sys.refresh_memory_specifics(MemoryRefreshKind::new().with_ram());
-    if sys.total_memory() == 0 {
-        return 0
+
+    let usage = ((sys.used_memory() as f64/sys.total_memory() as f64) * 100.0) as u64;
+
+
+    let mut output = String::from("");
+    if usage <= 50 {
+        output.push_str(format!("^c#32a856^{}^d^", usage).as_str())
     }
-    ((sys.used_memory() as f64/sys.total_memory() as f64) * 100.0) as u64
+    else if usage <= 60 {
+        output.push_str(format!("^c#ebe134^{}^d^", usage).as_str())
+    }    
+    else if usage <= 70 {
+        output.push_str(format!("^c#eb9534^{}^d^", usage).as_str())
+    }
+    else {
+        output.push_str(format!("^c#eb3434^{}^d^", usage).as_str())
+    }
+    output
+
+
 }
 
 
-fn get_cpu_usage(sys: &mut sysinfo::System) -> u32{
+fn get_cpu_usage(sys: &mut sysinfo::System) -> String{
     sys.refresh_cpu_usage();
     let mut totalusage: f32 = 0.0;
     for cpu in sys.cpus(){
         totalusage += cpu.cpu_usage();
     } 
-    (totalusage / sys.cpus().len() as f32) as u32
+    let usage = (totalusage / sys.cpus().len() as f32) as u32;
+
+    let mut output = String::from("");
+    if usage <= 50 {
+        output.push_str(format!("^c#32a856^{}^d^", usage).as_str())
+    }
+    else if usage <= 60 {
+        output.push_str(format!("^c#ebe134^{}^d^", usage).as_str())
+    }    
+    else if usage <= 70 {
+        output.push_str(format!("^c#eb9534^{}^d^", usage).as_str())
+    }
+    else {
+        output.push_str(format!("^c#eb3434^{}^d^", usage).as_str())
+    }
+    output
 }
 
+
 fn get_battery_percentage() -> String {
+    /*
+     * Read the current battery percentage from the
+     * class file 
+     */
+
     let mut output = String::from("");
+
+    match fs::read_to_string("/sys/class/power_supply/BAT0/capacity"){
+        Ok(mut percent) => {
+            percent.pop();
+
+            let num_per:u16 = percent.parse().unwrap();
+
+            if num_per <= 50 {
+                output.push_str(format!("^c#eb3434^{}^d^", num_per).as_str())
+            }
+            else if num_per <= 60 {
+                output.push_str(format!("^c#eb9534^{}^d^", num_per).as_str())
+            }    
+            else if num_per <= 70 {
+                output.push_str(format!("^c#ebe134^{}^d^", num_per).as_str())
+            }
+            else {
+                output.push_str(format!("^c#32a856^{}^d^", num_per).as_str())
+            }
+            output.push_str("%")
+        }
+        Err(_) => {
+            eprintln!("Could not find battery");
+            return String::from("err")
+        }
+    };
 
     match fs::read_to_string("/sys/class/power_supply/BAT0/status"){
         Ok(status) => {
             if status == "Charging\n" {
-                output.push_str("(crg) ")
+                output.push_str(" ^c#32a856^(crg)^d^")
             }
         }
         Err(_) => {
@@ -102,40 +163,56 @@ fn get_battery_percentage() -> String {
         }
     };
 
-    match fs::read_to_string("/sys/class/power_supply/BAT0/capacity"){
-        Ok(mut percent) => {
-            percent.pop();
-            output.push_str(&percent);
-        }
-        Err(_) => {
-            eprintln!("Could not find battery");
-            return String::from("err")
-        }
-    };
+
+
     output
 }
 
-fn get_system_volume() -> u16 {
+
+fn get_system_volume() -> String {
+    /*
+     * Spawns a shell to execute the amixer command
+     * and parses the output to determine the current
+     * system volume while also checking if the channel is muted.
+     */
     match Command::new("sh")
         .arg("-c")
-        .arg("amixer sget Master | grep 'Right:' | awk -F'[][]' '{ print $2 }' | sed 's/%//'")
-        .output(){
-            Ok(output) => {
-                let stdout = from_utf8(&output.stdout).unwrap().trim();
-                stdout.parse::<u16>().unwrap()
-            },
+        .arg("amixer sget Master | grep 'Front Right:' | awk -F'[][]' '{ print $2, $4 }'")
+        .output()
+    {
+        Ok(output) => {
+            let stdout = from_utf8(&output.stdout).unwrap().trim();
+            let parts: Vec<&str> = stdout.split_whitespace().collect();
 
+            if parts.len() == 2 {
+                let volume = parts[0].trim_end_matches('%').parse::<u16>().unwrap_or(0);
+                let is_muted = parts[1] == "off";
 
-            Err(_) => {
-                eprintln!("could not find audio device. have you installed amixer?");
-                0
+                if is_muted {
+                    format!("^c#eb3434^{}^d^% ^c#eb3434^(mut)^d^", volume) 
+                } else {
+                    format!("^c#32a856^{}^d^%", volume)
+                }
+            } else {
+                eprintln!("Unexpected amixer output format.");
+                String::from("")
             }
-
         }
-
+        Err(_) => {
+            eprintln!("Could not find audio device. Have you installed amixer?");
+            String::from("")
+        }
+    }
 }
 
-fn get_system_temp(components: &mut Components) -> u16 {
+
+fn get_system_temp(components: &mut Components) -> String {
+    /*
+     * Return the max temperature recorded on any sensor
+     * @Input - A Component containing temp sensor data
+     * @Output - the max temperature recorded on any sensor
+     */
+
     components.refresh();
     let mut max_temp = 0;
     for component in components {
@@ -144,5 +221,19 @@ fn get_system_temp(components: &mut Components) -> u16 {
             max_temp = temp;
         }
     }
-    max_temp
+    
+    let mut output = String::from("");
+    if max_temp <= 50 {
+        output.push_str(format!("^c#32a856^{}^d^", max_temp).as_str())
+    }
+    else if max_temp <= 60 {
+        output.push_str(format!("^c#ebe134^{}^d^", max_temp).as_str())
+    }    
+    else if max_temp <= 70 {
+        output.push_str(format!("^c#eb9534^{}^d^", max_temp).as_str())
+    }
+    else {
+        output.push_str(format!("^c#eb3434^{}^d^", max_temp).as_str())
+    }
+    output
 }
