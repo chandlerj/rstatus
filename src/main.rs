@@ -26,7 +26,7 @@ fn main() {
        let battery = get_battery_percentage();
        let sys_volume = get_system_volume();
        
-       let output = match CString::new(format!(" vol {:2}  temp {:2}C  bat {:2}  cpu {:2}%  mem {:2}%  {}", sys_volume, sys_temp, battery, cpu_usage, memory, time)) {
+       let output = match CString::new(format!(" bat {:2} vol {:2} {}", battery, sys_volume, time)) {
             Ok(out) => out,
             Err(e) => {
                eprintln!("{}", e.to_string());
@@ -133,18 +133,17 @@ fn get_battery_percentage() -> String {
             let num_per:u16 = percent.parse().unwrap();
 
             if num_per <= 50 {
-                output.push_str(format!("^c#eb3434^{}^d^", num_per).as_str())
+                output.push_str(format!("^c#eb3434^{}%^d^", num_per).as_str())
             }
             else if num_per <= 60 {
-                output.push_str(format!("^c#eb9534^{}^d^", num_per).as_str())
+                output.push_str(format!("^c#eb9534^{}%^d^", num_per).as_str())
             }    
             else if num_per <= 70 {
-                output.push_str(format!("^c#ebe134^{}^d^", num_per).as_str())
+                output.push_str(format!("^c#ebe134^{}%^d^", num_per).as_str())
             }
             else {
-                output.push_str(format!("^c#32a856^{}^d^", num_per).as_str())
+                output.push_str(format!("^c#32a856^{}%^d^", num_per).as_str())
             }
-            output.push_str("%")
         }
         Err(_) => {
             eprintln!("Could not find battery");
@@ -189,9 +188,9 @@ fn get_system_volume() -> String {
                 let is_muted = parts[1] == "off";
 
                 if is_muted {
-                    format!("^c#eb3434^{}^d^% ^c#eb3434^(mut)^d^", volume) 
+                    format!("^c#eb3434^{}%^d^ ^c#eb3434^(mut)^d^", volume) 
                 } else {
-                    format!("^c#32a856^{}^d^%", volume)
+                    format!("{}%", volume)
                 }
             } else {
                 eprintln!("Unexpected amixer output format.");
